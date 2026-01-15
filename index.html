@@ -3,56 +3,144 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Drive Gigante (multi-cuenta)</title>
+  <title>Drive Gigante</title>
   <link rel="stylesheet" href="./css/estilos.css" />
-  <!-- Google Identity Services -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
+
 <body>
-  <header>
-    <h1>Drive Gigante</h1>
-    <div class="actions">
-      <button id="btnAdd">Agregar cuenta</button>
-      <button id="btnRefreshAll">Refrescar lista</button>
+  <!-- TOP NAV -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">DG</div>
+      <div>
+        <div class="title">Drive Gigante</div>
+        <div class="subtitle">Multi-cuenta • Drive only</div>
+      </div>
     </div>
-    <div id="totals" class="totals"></div>
+
+    <button class="hamburger" id="btnHamburger" aria-label="Abrir menú">
+      ☰
+    </button>
+
+    <nav class="nav" id="topNav">
+      <button class="navbtn" id="btnAdd">Agregar cuenta</button>
+      <button class="navbtn" id="btnRefreshAll">Refrescar</button>
+      <button class="navbtn ghost" id="btnToggleAccounts">Cuentas</button>
+      <button class="navbtn ghost" id="btnToggleUpload">Subir</button>
+    </nav>
   </header>
 
-  <main class="grid">
-    <section class="panel">
-      <h2>Cuentas</h2>
+  <!-- STATS -->
+  <section class="stats">
+    <div class="statcard">
+      <div class="statlabel">Usado (Drive)</div>
+      <div class="statvalue" id="statUsed">—</div>
+    </div>
+    <div class="statcard">
+      <div class="statlabel">Libre (Drive)</div>
+      <div class="statvalue" id="statFree">—</div>
+    </div>
+    <div class="statcard">
+      <div class="statlabel">Total (Drive)</div>
+      <div class="statvalue" id="statTotal">—</div>
+    </div>
+  </section>
+
+  <main class="layout">
+    <!-- ACCOUNTS PANEL -->
+    <aside class="panel" id="panelAccounts">
+      <div class="panelHeader">
+        <h2>Cuentas</h2>
+        <button class="iconbtn" id="btnCloseAccounts" title="Cerrar">✕</button>
+      </div>
       <div id="accounts"></div>
       <p class="hint">
         Tip: para agregar otra cuenta, apretá “Agregar cuenta” y elegí otro Gmail.
       </p>
-    </section>
+    </aside>
 
-    <section class="panel">
-      <h2>Archivos</h2>
-
-      <div class="toolbar">
-        <label>
-          Cuenta destino (para subir):
-          <select id="uploadAccount"></select>
-        </label>
-
-        <label>
-          Carpeta destino (opcional, ID):
-          <input id="folderId" placeholder="(vacío = raíz)" />
-        </label>
-
-        <input id="fileInput" type="file" />
-        <button id="btnUpload">Subir</button>
+    <!-- MAIN -->
+    <section class="panel mainPanel">
+      <div class="panelHeader">
+        <h2>Archivos</h2>
+        <div class="rightTools">
+          <span class="pill" id="loadingPill" style="display:none;">Cargando…</span>
+        </div>
       </div>
 
+      <!-- UPLOAD (collapsible) -->
+      <div class="collapse" id="panelUpload">
+        <div class="collapseHeader">
+          <div class="collapseTitle">Subir archivo</div>
+          <button class="iconbtn" id="btnCloseUpload" title="Cerrar">✕</button>
+        </div>
+
+        <div class="toolbar">
+          <label class="field">
+            <span>Cuenta destino</span>
+            <select id="uploadAccount"></select>
+          </label>
+
+          <label class="field">
+            <span>Carpeta destino (ID)</span>
+            <input id="folderId" placeholder="(vacío = raíz)" />
+          </label>
+
+          <label class="field">
+            <span>Archivo</span>
+            <input id="fileInput" type="file" />
+          </label>
+
+          <button class="primary" id="btnUpload">Subir</button>
+        </div>
+      </div>
+
+      <!-- FILTERS -->
       <div class="toolbar">
-        <input id="search" placeholder="Buscar por nombre..." />
-        <label class="chk">
-          <input id="groupByAccount" type="checkbox" checked />
-          Agrupar por cuenta
+        <label class="field">
+          <span>Mostrar</span>
+          <select id="viewMode">
+            <option value="all_grouped">Todas (agrupadas)</option>
+            <option value="all_flat">Todas (mezcladas)</option>
+            <option value="single">Una cuenta</option>
+          </select>
+        </label>
+
+        <label class="field" id="singleAccountWrap" style="display:none;">
+          <span>Cuenta</span>
+          <select id="accountPick"></select>
+        </label>
+
+        <label class="field">
+          <span>Tipo</span>
+          <select id="typeFilter">
+            <option value="all">Todos</option>
+            <option value="folders">Carpetas</option>
+            <option value="pdf">PDF</option>
+            <option value="images">Imágenes</option>
+            <option value="gdoc">Docs</option>
+            <option value="gsheet">Sheets</option>
+            <option value="gslide">Slides</option>
+            <option value="other">Otros</option>
+          </select>
+        </label>
+
+        <label class="field search">
+          <span>Buscar</span>
+          <input id="search" placeholder="Nombre contiene..." />
+        </label>
+
+        <label class="field">
+          <span>Vista</span>
+          <select id="layoutMode">
+            <option value="list">Lista</option>
+            <option value="grid">Cards</option>
+          </select>
         </label>
       </div>
 
+      <!-- RESULTS -->
       <div id="files"></div>
     </section>
   </main>
