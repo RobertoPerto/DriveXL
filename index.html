@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Drive Gigante (multi-cuenta)</title>
+  <link rel="stylesheet" href="./css/estilos.css" />
+  <!-- Google Identity Services -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+  <header>
+    <h1>Drive Gigante</h1>
+    <div class="actions">
+      <button id="btnAdd">Agregar cuenta</button>
+      <button id="btnRefreshAll">Refrescar lista</button>
+    </div>
+    <div id="totals" class="totals"></div>
+  </header>
+
+  <main class="grid">
+    <section class="panel">
+      <h2>Cuentas</h2>
+      <div id="accounts"></div>
+      <p class="hint">
+        Tip: para agregar otra cuenta, apretá “Agregar cuenta” y elegí otro Gmail.
+      </p>
+    </section>
+
+    <section class="panel">
+      <h2>Archivos</h2>
+
+      <div class="toolbar">
+        <label>
+          Cuenta destino (para subir):
+          <select id="uploadAccount"></select>
+        </label>
+
+        <label>
+          Carpeta destino (opcional, ID):
+          <input id="folderId" placeholder="(vacío = raíz)" />
+        </label>
+
+        <input id="fileInput" type="file" />
+        <button id="btnUpload">Subir</button>
+      </div>
+
+      <div class="toolbar">
+        <input id="search" placeholder="Buscar por nombre..." />
+        <label class="chk">
+          <input id="groupByAccount" type="checkbox" checked />
+          Agrupar por cuenta
+        </label>
+      </div>
+
+      <div id="files"></div>
+    </section>
+  </main>
+
+  <script src="./js/scripts.js"></script>
+</body>
+</html>

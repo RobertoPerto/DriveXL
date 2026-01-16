@@ -1,0 +1,17 @@
+body { font-family: system-ui, Arial, sans-serif; margin: 0; }
+header { padding: 16px; border-bottom: 1px solid #ddd; display: grid; gap: 8px; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+button { padding: 8px 12px; cursor: pointer; }
+.grid { display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; }
+.panel { border: 1px solid #ddd; border-radius: 10px; padding: 12px; }
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.toolbar input, .toolbar select { padding: 6px; }
+.totals { font-size: 14px; opacity: .9; }
+.hint { font-size: 12px; opacity: .7; }
+.card { border: 1px solid #eee; border-radius: 10px; padding: 10px; margin: 8px 0; }
+.row { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+.small { font-size: 12px; opacity: .75; }
+.file { padding: 8px; border-bottom: 1px solid #eee; display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.file b { word-break: break-word; }
+.file .btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.chk { display: flex; gap: 6px; align-items: center; }
