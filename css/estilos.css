@@ -533,3 +533,60 @@ input::placeholder {
         min-width: 150px;
     }
 }
+
+/* === OVERLAYS / SCRIM === */
+.scrim{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  z-index: 80;
+}
+
+/* Bloquear scroll del body cuando hay overlays */
+body.lockScroll{
+  overflow: hidden;
+}
+
+/* === NAV mobile: que no sea transparente y quede arriba === */
+.nav{
+  z-index: 90;
+  background: rgba(15, 23, 42, .96) !important; /* más sólido */
+  backdrop-filter: blur(10px);
+}
+
+/* === Panel cuentas: que se pueda cerrar también en desktop === */
+#panelAccounts{
+  display: none;            /* por defecto oculto en TODOS los tamaños */
+  z-index: 95;
+}
+
+/* cuando está abierto */
+#panelAccounts.open{
+  display: block;
+}
+
+/* Desktop: panel cuentas como overlay lateral (no “siempre visible”) */
+@media (min-width: 981px){
+  #panelAccounts.open{
+    position: fixed;
+    top: 78px;              /* ajustá según tu topbar */
+    left: 16px;
+    width: 340px;
+    height: calc(100vh - 94px);
+    overflow: auto;         /* scroll adentro del panel */
+  }
+
+  /* Para que el contenido principal use todo el ancho (ya no reservamos 340px) */
+  .layout{
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Mobile: ya lo tenías, pero lo dejamos bien “modal” y con scroll interno */
+@media (max-width: 980px){
+  #panelAccounts.open{
+    position: fixed;
+    inset: 68px 10px 10px 10px;
+    overflow: auto;         /* scroll adentro del panel */
+  }
+}
