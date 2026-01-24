@@ -126,7 +126,7 @@ function initAuth() {
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: CLIENT_ID,
     scope: SCOPES,
-    callback: () => {}
+    callback: () => { }
   });
 }
 
@@ -400,10 +400,21 @@ async function uploadFileToAccount(accountId, fileObj, folderId) {
   const created = await r.json();
 
   // hacerlo público
-  try { await makePublic(a, created.id); } catch {}
+  try { await makePublic(a, created.id); } catch { }
 
-  // armar link público típico
-  const publicLink = created.webViewLink || `https://drive.google.com/file/d/${created.id}/view?usp=sharing`;
+  function buildPublicLink(file) {
+    const id = file.id;
+    const m = file.mimeType || "";
+
+    if (m === "application/vnd.google-apps.document") return `https://docs.google.com/document/d/${id}/edit?usp=sharing`;
+    if (m === "application/vnd.google-apps.spreadsheet") return `https://docs.google.com/spreadsheets/d/${id}/edit?usp=sharing`;
+    if (m === "application/vnd.google-apps.presentation") return `https://docs.google.com/presentation/d/${id}/edit?usp=sharing`;
+
+    // archivos normales
+    return `https://drive.google.com/file/d/${id}/view?usp=sharing`;
+  }
+
+  const publicLink = created.webViewLink || buildPublicLink(created);
 
   // LOG A SHEET (no frenamos UX si falla)
   await logUploadToSheet({
@@ -467,7 +478,7 @@ async function addAccount() {
     try {
       const u = await getUserInfo(access_token);
       if (u?.email) a.label = u.email;
-    } catch {}
+    } catch { }
 
     a.storage = await getStorageQuota(a, true);
 
@@ -503,7 +514,7 @@ async function reconnectAccount(accountId) {
 function removeAccount(accountId) {
   const a = accounts.find(x => x.id === accountId);
   if (a?.thumbCache) {
-    Object.values(a.thumbCache).forEach(u => { try { URL.revokeObjectURL(u); } catch {} });
+    Object.values(a.thumbCache).forEach(u => { try { URL.revokeObjectURL(u); } catch { } });
   }
   accounts = accounts.filter(x => x.id !== accountId);
   saveAccounts();
@@ -565,6 +576,7 @@ function syncOverlayState() {
 
 function setAccountsOpen(on) {
   if (!panelAccounts) return;
+  if (on) setUploadOpen(false);        // <-- cierra Upload si abrís Cuentas
   panelAccounts.classList.toggle("open", on);
   if (on) setNavOpen(false);
   syncOverlayState();
@@ -572,6 +584,7 @@ function setAccountsOpen(on) {
 
 function setUploadOpen(on) {
   if (!panelUpload) return;
+  if (on) setAccountsOpen(false);      // <-- cierra Cuentas si abrís Upload
   panelUpload.style.display = on ? "" : "none";
   if (on) setNavOpen(false);
   syncOverlayState();
@@ -920,9 +933,9 @@ function fileCard(a, f) {
     <div class="card">
       <div class="cardThumb">
         ${isImg
-          ? `<img alt="${escapeHtml(f.name)}" ${thumbAttr} />`
-          : `<div style="font-size:34px;">${fileIconEmoji(f.mimeType)}</div>`
-        }
+      ? `<img alt="${escapeHtml(f.name)}" ${thumbAttr} />`
+      : `<div style="font-size:34px;">${fileIconEmoji(f.mimeType)}</div>`
+    }
       </div>
       <div class="cardBody">
         <div class="cardName" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>
@@ -972,7 +985,7 @@ async function lazyLoadThumbs() {
     try {
       const url = await getImageThumbUrl(a, fileId);
       img.src = url;
-    } catch {}
+    } catch { }
   }
 }
 
