@@ -491,3 +491,61 @@ select, option, optgroup {
   background-color: #111c33 !important; /* var(--surface2) */
   color: #e8eefc !important;            /* var(--text) */
 }
+
+/* =========================================================
+   Fix contraste cards con imágenes claras / transparentes
+   ========================================================= */
+
+.card { 
+  position: relative;
+  overflow: hidden;
+}
+
+/* Fondo de la miniatura: oscuro + "checker" suave opcional */
+.cardThumb{
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(0,0,0,.35), rgba(0,0,0,.55)),
+    rgba(0,0,0,.35);
+}
+
+/* Oscurece SIEMPRE la miniatura para que no “mate” el contraste */
+.cardThumb::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  /* degradé más fuerte abajo (donde suele “pegar” el texto visualmente) */
+  background: linear-gradient(to bottom,
+    rgba(0,0,0,.10) 0%,
+    rgba(0,0,0,.35) 55%,
+    rgba(0,0,0,.65) 100%
+  );
+}
+
+/* Asegura que la imagen quede debajo del overlay */
+.cardThumb img{
+  position: relative;
+  z-index: 0;
+}
+
+/* Base oscura real para nombre/info (no depende de la imagen) */
+.cardBody{
+  background: rgba(15, 23, 42, .86); /* parecido a tu --surface */
+  backdrop-filter: blur(6px);
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+
+/* Base oscura para botones */
+.cardBtns{
+  background: rgba(15, 23, 42, .86);
+  backdrop-filter: blur(6px);
+}
+
+/* Un toque extra de legibilidad */
+.cardName, .cardInfo{
+  text-shadow: 0 1px 2px rgba(0,0,0,.55);
+}
+.btnSmall{
+  text-shadow: 0 1px 2px rgba(0,0,0,.45);
+}
