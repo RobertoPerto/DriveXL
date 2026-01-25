@@ -118,7 +118,7 @@ function initAuth() {
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: CLIENT_ID,
     scope: SCOPES,
-    callback: () => {}
+    callback: () => { }
   });
 }
 
@@ -169,7 +169,7 @@ async function ensureToken(a, allowInteractive = false) {
     a.needsReconnect = false;
     saveAccounts();
     return;
-  } catch {}
+  } catch { }
 
   // 2) popup solo si fue click usuario
   if (!allowInteractive) {
@@ -331,8 +331,8 @@ async function makePublic(a, fileId) {
 }
 
 // ===== helpers metadata =====
-function norm(s){ return String(s || "").trim(); }
-function buildGroupKey(meta){
+function norm(s) { return String(s || "").trim(); }
+function buildGroupKey(meta) {
   // Si es serie: series|season  (ej: TBBT|1)
   if (meta.series) return `${meta.series}${meta.season ? `|${meta.season}` : ""}`;
   // Si es saga: saga  (ej: Harry Potter)
@@ -341,7 +341,7 @@ function buildGroupKey(meta){
   if (meta.category) return meta.category;
   return "";
 }
-function parseTags(s){
+function parseTags(s) {
   return norm(s)
     .split(",")
     .map(x => x.trim())
@@ -389,7 +389,7 @@ async function uploadFileToAccount(accountId, fileObj, folderId, meta) {
   const created = await r.json();
 
   // hacerlo público
-  try { await makePublic(a, created.id); } catch {}
+  try { await makePublic(a, created.id); } catch { }
 
   function buildPublicLink(file) {
     const id = file.id;
@@ -411,6 +411,7 @@ async function uploadFileToAccount(accountId, fileObj, folderId, meta) {
     folderId: (folderId || "").trim(),
     fileId: created.id,
     name: created.name,
+    displayName: meta?.displayName || "",
     mimeType: created.mimeType,
     size: created.size || "",
     modifiedTime: created.modifiedTime || "",
@@ -475,7 +476,7 @@ async function addAccount() {
     try {
       const u = await getUserInfo(access_token);
       if (u?.email) a.label = u.email;
-    } catch {}
+    } catch { }
 
     a.storage = await getStorageQuota(a, true);
 
@@ -511,7 +512,7 @@ async function reconnectAccount(accountId) {
 function removeAccount(accountId) {
   const a = accounts.find(x => x.id === accountId);
   if (a?.thumbCache) {
-    Object.values(a.thumbCache).forEach(u => { try { URL.revokeObjectURL(u); } catch {} });
+    Object.values(a.thumbCache).forEach(u => { try { URL.revokeObjectURL(u); } catch { } });
   }
   accounts = accounts.filter(x => x.id !== accountId);
   saveAccounts();
@@ -538,6 +539,7 @@ const elMetaSeries = document.getElementById("metaSeries");
 const elMetaSeason = document.getElementById("metaSeason");
 const elMetaEpisode = document.getElementById("metaEpisode");
 const elMetaTags = document.getElementById("metaTags");
+const elMetaDisplayName = document.getElementById("metaDisplayName");
 
 // filters
 const elViewMode = document.getElementById("viewMode");
@@ -794,6 +796,7 @@ async function doUpload() {
 
   // leer metadata (si inputs no existen, queda vacío)
   const meta = {
+    displayName: norm(elMetaDisplayName?.value),
     category: norm(elMetaCategory?.value),
     saga: norm(elMetaSaga?.value),
     series: norm(elMetaSeries?.value),
@@ -958,9 +961,9 @@ function fileCard(a, f) {
     <div class="card">
       <div class="cardThumb">
         ${isImg
-          ? `<img alt="${escapeHtml(f.name)}" ${thumbAttr} />`
-          : `<div style="font-size:34px;">${fileIconEmoji(f.mimeType)}</div>`
-        }
+      ? `<img alt="${escapeHtml(f.name)}" ${thumbAttr} />`
+      : `<div style="font-size:34px;">${fileIconEmoji(f.mimeType)}</div>`
+    }
       </div>
       <div class="cardBody">
         <div class="cardName" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>
@@ -1010,7 +1013,7 @@ async function lazyLoadThumbs() {
     try {
       const url = await getImageThumbUrl(a, fileId);
       img.src = url;
-    } catch {}
+    } catch { }
   }
 }
 
