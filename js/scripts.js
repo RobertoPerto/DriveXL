@@ -569,9 +569,10 @@ function setNavOpen(on) {
 
 function anyOverlayOpen() {
   const accOpen = panelAccounts?.classList.contains("open");
-  const uplOpen = panelUpload && panelUpload.style.display !== "none";
+  const uplOpen = panelUpload && window.getComputedStyle(panelUpload).display !== "none";
   return !!(accOpen || uplOpen);
 }
+
 
 function syncOverlayState() {
   const on = anyOverlayOpen();
@@ -589,8 +590,13 @@ function setAccountsOpen(on) {
 
 function setUploadOpen(on) {
   if (!panelUpload) return;
+
   if (on) setAccountsOpen(false);
-  panelUpload.style.display = on ? "" : "none";
+
+  // OJO: como en CSS #panelUpload tiene display:none,
+  // acá hay que forzarlo a "block" (no dejarlo vacío).
+  panelUpload.style.display = on ? "block" : "none";
+
   if (on) setNavOpen(false);
   syncOverlayState();
 }
@@ -1046,7 +1052,11 @@ function bootWaitGIS() {
     return;
   }
   initAuth();
+
+  // aseguramos estado inicial consistente
   if (panelUpload) panelUpload.style.display = "none";
+
   renderAll();
 }
+
 bootWaitGIS();
