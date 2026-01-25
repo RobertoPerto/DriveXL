@@ -192,8 +192,8 @@ function setAccountsOpen(on) {
 
 function setUploadOpen(on) {
   if (!panelUpload) return;
-  if (on) setAccountsOpen(false);
-  panelUpload.style.display = on ? "" : "none";
+  if (on) setAccountsOpen(false);      // cierra Cuentas si abrís Upload
+  panelUpload.style.display = on ? "block" : "none";  // ✅ CLAVE
   if (on) setNavOpen(false);
   syncOverlayState();
 }
