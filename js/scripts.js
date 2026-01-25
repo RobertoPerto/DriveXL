@@ -30,6 +30,20 @@ async function logUploadToSheet(payload) {
   }
 }
 
+// borrar registros en Sheets por fileId
+async function deleteFromSheetByFileId(fileId) {
+  if (!SHEETS_LOG_ENDPOINT) return;
+  try {
+    await fetch(SHEETS_LOG_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "delete", fileId })
+    });
+  } catch (e) {
+    console.warn("deleteFromSheetByFileId error:", e);
+  }
+}
+
 // =====================
 // 1) CONFIG
 // =====================
@@ -95,6 +109,11 @@ function setLoading(on) {
   const pill = document.getElementById("loadingPill");
   if (!pill) return;
   pill.style.display = on ? "inline-flex" : "none";
+}
+
+// si estamos subiendo, preferimos mostrar la barra de progreso antes que solo el pill
+if (on && elUploadProgressWrap && elUploadProgressWrap.style.display !== "none") {
+  pill.style.display = "none";
 }
 
 function setUploadProgress(on, pct = 0, text = "Subiendo…") {
@@ -255,6 +274,18 @@ async function apiFetchAccount(a, url, opts = {}, { allowInteractive = false, re
 // 6) DRIVE API
 // =====================
 
+// ===== BORRAR DEFINITIVO (no va a papelera) =====
+async function deleteFileForever(a, fileId) {
+  const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`;
+  await apiFetchAccount(a, url, { method: "DELETE" }, { allowInteractive: true });
+}
+
+// ===== VACIAR PAPELERA =====
+async function emptyTrash(a) {
+  const url = "https://www.googleapis.com/drive/v3/files/trash";
+  await apiFetchAccount(a, url, { method: "DELETE" }, { allowInteractive: true });
+}
+
 async function uploadMultipartWithProgress(a, url, bodyBlob, contentType) {
   // Asegura token (interactivo porque es acción del usuario)
   await ensureToken(a, true);
@@ -395,19 +426,6 @@ async function makePublic(a, fileId) {
     type: "anyone",
     allowFileDiscovery: false
   });
-
-  // ===== BORRAR DEFINITIVO (no va a papelera) =====
-  async function deleteFileForever(a, fileId) {
-    const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`;
-    await apiFetchAccount(a, url, { method: "DELETE" }, { allowInteractive: true });
-  }
-
-  // ===== VACIAR PAPELERA =====
-  async function emptyTrash(a) {
-    const url = "https://www.googleapis.com/drive/v3/files/trash";
-    await apiFetchAccount(a, url, { method: "DELETE" }, { allowInteractive: true });
-  }
-
 
   await apiFetchAccount(a, url, {
     method: "POST",
@@ -1162,6 +1180,10 @@ window.delForever = async (accId, fileId) => {
   setLoading(true);
   try {
     await deleteFileForever(a, fileId);
+
+    // también borrar registro(s) en la planilla
+    await deleteFromSheetByFileId(fileId);
+
 
     // sacarlo del cache local para que desaparezca al instante
     if (a.filesCache) a.filesCache = a.filesCache.filter(x => x.id !== fileId);
