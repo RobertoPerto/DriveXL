@@ -1,45 +1,35 @@
 /* =========================================================
-   Drive Gigante — scripts.js (FULL con todos los cambios)
-   + EXTRA: al subir, guardar metadata en Google Sheets via Apps Script
-   - Multi-cuenta (localStorage)
-   - Silent reauth + retry 401/403 (sin alerts feos)
-   - Toast (usa #toast en tu HTML)
-   - Actualizar una / todas
-   - List/Grid + filtros + búsqueda
-   - Thumbs lazy para imágenes (sin forzar popup)
-   - FIX UI: scrim + lockScroll + cerrar menú al abrir paneles
-   - FIX UX: cancelar popup no deja "Cargando..."
-   - OPCIÓN 1: al subir, dejar archivo PUBLICO (anyoneWithLink reader)
+   Drive Gigante — scripts.js (FULL)
+   Multi-cuenta Drive + Upload + Log a Sheets + UI fixes
    ========================================================= */
 
 // =====================
 // 0) SHEETS LOG (Apps Script Web App)
 // =====================
-// Pegá acá tu WebApp (la que ya tenés):
-const SHEETS_LOG_ENDPOINT = "https://script.google.com/macros/s/AKfycbwmWHPB1JszHHIsh9qM25J1Hv-rBfpeK2iRijZUBv4BzVawDA48JmD82jbLvBq7FDsn5w/exec";
+// Pegá acá tu WebApp:
+const SHEETS_LOG_ENDPOINT =
+  "https://script.google.com/macros/s/AKfycbwmWHPB1JszHHIsh9qM25J1Hv-rBfpeK2iRijZUBv4BzVawDA48JmD82jbLvBq7FDsn5w/exec";
 
 // manda metadata al Apps Script SIN preflight CORS (Content-Type: text/plain)
 async function logUploadToSheet(payload) {
   if (!SHEETS_LOG_ENDPOINT) return;
-
   try {
     const r = await fetch(SHEETS_LOG_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      cache: "no-store",
     });
-    // no frenamos tu UX si falla, pero dejamos toast
     if (!r.ok) throw new Error(await r.text().catch(() => "Sheets log failed"));
     return await r.json().catch(() => ({}));
   } catch (e) {
     console.warn("logUploadToSheet error:", e);
-    // opcional: toast suave
     showToast("Subido OK, pero no pude registrar en la planilla.");
   }
 }
 
 // =====================
-// 1) CONFIG
+// 1) CONFIG (Google Identity Services)
 // =====================
 const CLIENT_ID = "685537038231-mfoljus3n4susmv36bvl7mnf2kuslcc1.apps.googleusercontent.com";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
@@ -62,7 +52,46 @@ let uiState = {
 };
 
 // =====================
-// 3) HELPERS (storage, ui)
+// 3) DOM
+// =====================
+const elAccounts = document.getElementById("accounts");
+const elFiles = document.getElementById("files");
+
+const elUploadAccount = document.getElementById("uploadAccount");
+const elFolderId = document.getElementById("folderId");
+const elFileInput = document.getElementById("fileInput");
+
+// (opcionales si luego los agregás en el HTML)
+const elCategory = document.getElementById("categoryInput");
+const elSaga = document.getElementById("sagaInput");
+const elSeries = document.getElementById("seriesInput");
+const elSeason = document.getElementById("seasonInput");
+const elEpisode = document.getElementById("episodeInput");
+const elTags = document.getElementById("tagsInput");
+
+const elStatUsed = document.getElementById("statUsed");
+const elStatFree = document.getElementById("statFree");
+const elStatTotal = document.getElementById("statTotal");
+
+// filters
+const elViewMode = document.getElementById("viewMode");
+const elAccountPick = document.getElementById("accountPick");
+const elSingleAccountWrap = document.getElementById("singleAccountWrap");
+const elTypeFilter = document.getElementById("typeFilter");
+const elSearch = document.getElementById("search");
+const elLayoutMode = document.getElementById("layoutMode");
+
+// menu / panels
+const btnHamburger = document.getElementById("btnHamburger");
+const topNav = document.getElementById("topNav");
+const panelAccounts = document.getElementById("panelAccounts");
+const panelUpload = document.getElementById("panelUpload");
+
+// scrim
+const elScrim = document.getElementById("scrim");
+
+// =====================
+// 4) HELPERS (storage, ui)
 // =====================
 function loadAccounts() {
   try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); }
@@ -74,7 +103,7 @@ function uid() { return Math.random().toString(16).slice(2) + Date.now().toStrin
 function isExpired(a) { return !a.access_token || Date.now() > (a.expires_at - 30_000); }
 
 function escapeHtml(s) {
-  return (s || "").replace(/[&<>"']/g, c => ({
+  return String(s || "").replace(/[&<>"']/g, c => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   }[c]));
 }
@@ -105,7 +134,6 @@ function setLoading(on) {
   pill.style.display = on ? "inline-flex" : "none";
 }
 
-// Toast (requiere <div id="toast"> en el HTML)
 function showToast(msg, ms = 3200) {
   const el = document.getElementById("toast");
   if (!el) return;
@@ -120,24 +148,91 @@ function showToast(msg, ms = 3200) {
 }
 
 // =====================
-// 4) AUTH (GIS)
+// 5) OVERLAYS (scrim + lockScroll + close collisions)
+// =====================
+function setScrim(on) {
+  if (!elScrim) return;
+  elScrim.style.display = on ? "" : "none";
+}
+
+function setNavOpen(on) {
+  if (!topNav) return;
+  topNav.classList.toggle("open", on);
+  syncOverlayState();
+}
+
+function isUploadOpen() {
+  return !!(panelUpload && panelUpload.style.display !== "none");
+}
+function isAccountsOpen() {
+  return !!(panelAccounts && panelAccounts.classList.contains("open"));
+}
+function isNavOpen() {
+  return !!(topNav && topNav.classList.contains("open"));
+}
+
+function anyOverlayOpen() {
+  // en mobile, el menú también cuenta como overlay
+  return isNavOpen() || isAccountsOpen() || isUploadOpen();
+}
+
+function syncOverlayState() {
+  const on = anyOverlayOpen();
+  document.body.classList.toggle("lockScroll", on);
+  setScrim(on);
+}
+
+function setAccountsOpen(on) {
+  if (!panelAccounts) return;
+  if (on) setUploadOpen(false);
+  panelAccounts.classList.toggle("open", on);
+  if (on) setNavOpen(false);
+  syncOverlayState();
+}
+
+function setUploadOpen(on) {
+  if (!panelUpload) return;
+  if (on) setAccountsOpen(false);
+  panelUpload.style.display = on ? "" : "none";
+  if (on) setNavOpen(false);
+  syncOverlayState();
+}
+
+// scrim click: cerrar TODO
+if (elScrim) {
+  elScrim.addEventListener("click", () => {
+    setNavOpen(false);
+    setAccountsOpen(false);
+    setUploadOpen(false);
+  });
+}
+
+// click fuera: cerrar solo menú
+document.addEventListener("click", (e) => {
+  if (!isNavOpen()) return;
+  const ham = document.getElementById("btnHamburger");
+  if (topNav.contains(e.target) || (ham && ham.contains(e.target))) return;
+  setNavOpen(false);
+});
+
+// =====================
+// 6) AUTH (GIS)
 // =====================
 function initAuth() {
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: CLIENT_ID,
     scope: SCOPES,
-    callback: () => { }
+    callback: () => {}
   });
 }
 
 /**
  * requestAccessToken con timeout
- * Evita que quede "cargando" infinito si el popup se cierra o cuelga.
+ * Evita "cargando infinito" si se cierra/cuelga popup.
  */
 function requestAccessToken({ prompt, hint } = {}) {
   return new Promise((resolve, reject) => {
     let done = false;
-
     const timer = setTimeout(() => {
       if (done) return;
       done = true;
@@ -159,12 +254,10 @@ function requestAccessToken({ prompt, hint } = {}) {
   });
 }
 
-// Agregar/reconectar: forzar consentimiento
 function requestTokenConsent(hintEmail) {
   return requestAccessToken({ prompt: "consent", hint: hintEmail });
 }
 
-// Renovar: intento silencioso
 function requestTokenSilent(hintEmail) {
   return requestAccessToken({ prompt: "", hint: hintEmail });
 }
@@ -179,13 +272,11 @@ async function getUserInfo(token) {
 
 /**
  * ensureToken(a, allowInteractive)
- * - allowInteractive=false: NO abre popup, solo silent (ideal para llamadas automáticas)
- * - allowInteractive=true: si silent falla, permite popup (ideal cuando hay click del usuario)
  */
 async function ensureToken(a, allowInteractive = false) {
   if (!isExpired(a)) return;
 
-  // 1) silent
+  // silent
   try {
     const resp = await requestTokenSilent(a.label);
     a.access_token = resp.access_token;
@@ -193,11 +284,8 @@ async function ensureToken(a, allowInteractive = false) {
     a.needsReconnect = false;
     saveAccounts();
     return;
-  } catch {
-    // seguimos
-  }
+  } catch {}
 
-  // 2) popup solo si fue provocado por el usuario
   if (!allowInteractive) {
     a.needsReconnect = true;
     saveAccounts();
@@ -212,7 +300,7 @@ async function ensureToken(a, allowInteractive = false) {
 }
 
 // =====================
-// 5) API FETCH con retry
+// 7) API FETCH con retry
 // =====================
 function isAuthError(status, bodyText = "") {
   if (status === 401) return true;
@@ -271,7 +359,7 @@ async function apiFetchAccount(a, url, opts = {}, { allowInteractive = false, re
 }
 
 // =====================
-// 6) DRIVE API
+// 8) DRIVE API
 // =====================
 async function getStorageQuota(a, allowInteractive = false) {
   const url = "https://www.googleapis.com/drive/v3/about?fields=storageQuota";
@@ -303,7 +391,6 @@ async function listAllFiles(a, allowInteractive = false) {
   return files;
 }
 
-// download helpers
 function isGoogleWorkspaceDoc(mimeType) {
   return (mimeType || "").startsWith("application/vnd.google-apps.");
 }
@@ -343,7 +430,7 @@ async function downloadFile(a, file) {
   }
 }
 
-// ===== OPCIÓN 1: hacer PUBLICO (anyoneWithLink) =====
+// hacer PUBLICO (anyoneWithLink reader)
 async function makePublic(a, fileId) {
   const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/permissions`;
   const body = JSON.stringify({
@@ -387,7 +474,6 @@ async function uploadFileToAccount(accountId, fileObj, folderId) {
     type: `multipart/related; boundary=${boundary}`
   });
 
-  // pedimos fields para tener todo lo que vamos a guardar en la Sheet
   const fields = encodeURIComponent("id,name,mimeType,size,modifiedTime,webViewLink,parents");
   const url = `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=${fields}`;
 
@@ -400,23 +486,31 @@ async function uploadFileToAccount(accountId, fileObj, folderId) {
   const created = await r.json();
 
   // hacerlo público
-  try { await makePublic(a, created.id); } catch { }
+  try { await makePublic(a, created.id); } catch {}
 
   function buildPublicLink(file) {
     const id = file.id;
     const m = file.mimeType || "";
-
     if (m === "application/vnd.google-apps.document") return `https://docs.google.com/document/d/${id}/edit?usp=sharing`;
     if (m === "application/vnd.google-apps.spreadsheet") return `https://docs.google.com/spreadsheets/d/${id}/edit?usp=sharing`;
     if (m === "application/vnd.google-apps.presentation") return `https://docs.google.com/presentation/d/${id}/edit?usp=sharing`;
-
-    // archivos normales
     return `https://drive.google.com/file/d/${id}/view?usp=sharing`;
   }
 
   const publicLink = created.webViewLink || buildPublicLink(created);
 
-  // LOG A SHEET (no frenamos UX si falla)
+  // metadata opcional (si no existen inputs, manda "")
+  const category = (elCategory?.value || "").trim();
+  const saga = (elSaga?.value || "").trim();
+  const series = (elSeries?.value || "").trim();
+  const season = (elSeason?.value || "").trim();
+  const episode = (elEpisode?.value || "").trim();
+  const tags = (elTags?.value || "").trim();
+
+  // groupKey simple (podés cambiarlo después)
+  const groupKey = [category || "", (series || saga) || "", season ? `T${season}` : ""]
+    .filter(Boolean).join(" / ");
+
   await logUploadToSheet({
     source: "driveXL",
     uploadedAt: new Date().toISOString(),
@@ -429,14 +523,23 @@ async function uploadFileToAccount(accountId, fileObj, folderId) {
     size: created.size || "",
     modifiedTime: created.modifiedTime || "",
     webViewLink: created.webViewLink || "",
-    publicLink
+    publicLink,
+
+    // === metadata nueva (IMPORTANTE: usa "category") ===
+    category,
+    saga,
+    series,
+    season,
+    episode,
+    tags,
+    groupKey
   });
 
   return created;
 }
 
 // =====================
-// 7) THUMBNAILS (grid)
+// 9) THUMBNAILS (grid)
 // =====================
 function isImageMime(m) { return (m || "").startsWith("image/"); }
 
@@ -455,7 +558,7 @@ async function getImageThumbUrl(a, fileId) {
 }
 
 // =====================
-// 8) ACCOUNTS OPS
+// 10) ACCOUNTS OPS
 // =====================
 async function addAccount() {
   setLoading(true);
@@ -478,7 +581,7 @@ async function addAccount() {
     try {
       const u = await getUserInfo(access_token);
       if (u?.email) a.label = u.email;
-    } catch { }
+    } catch {}
 
     a.storage = await getStorageQuota(a, true);
 
@@ -514,7 +617,7 @@ async function reconnectAccount(accountId) {
 function removeAccount(accountId) {
   const a = accounts.find(x => x.id === accountId);
   if (a?.thumbCache) {
-    Object.values(a.thumbCache).forEach(u => { try { URL.revokeObjectURL(u); } catch { } });
+    Object.values(a.thumbCache).forEach(u => { try { URL.revokeObjectURL(u); } catch {} });
   }
   accounts = accounts.filter(x => x.id !== accountId);
   saveAccounts();
@@ -522,118 +625,36 @@ function removeAccount(accountId) {
 }
 
 // =====================
-// 9) UI BINDINGS
+// 11) UI BINDINGS (botones)
 // =====================
-const elAccounts = document.getElementById("accounts");
-const elFiles = document.getElementById("files");
-const elUploadAccount = document.getElementById("uploadAccount");
-const elFolderId = document.getElementById("folderId");
-const elFileInput = document.getElementById("fileInput");
+function bindUI() {
+  // nav buttons
+  document.getElementById("btnAdd").onclick = () => addAccount().catch(errUI);
+  document.getElementById("btnRefreshAll").onclick = () => refreshAll().catch(errUI);
+  document.getElementById("btnUpload").onclick = () => doUpload().catch(errUI);
 
-const elStatUsed = document.getElementById("statUsed");
-const elStatFree = document.getElementById("statFree");
-const elStatTotal = document.getElementById("statTotal");
+  // toggles
+  document.getElementById("btnToggleAccounts").onclick = () => setAccountsOpen(true);
+  document.getElementById("btnCloseAccounts").onclick = () => setAccountsOpen(false);
+  document.getElementById("btnToggleUpload").onclick = () => setUploadOpen(true);
+  document.getElementById("btnCloseUpload").onclick = () => setUploadOpen(false);
 
-// filters
-const elViewMode = document.getElementById("viewMode");
-const elAccountPick = document.getElementById("accountPick");
-const elSingleAccountWrap = document.getElementById("singleAccountWrap");
-const elTypeFilter = document.getElementById("typeFilter");
-const elSearch = document.getElementById("search");
-const elLayoutMode = document.getElementById("layoutMode");
+  // hamburger
+  if (btnHamburger) {
+    btnHamburger.onclick = () => setNavOpen(!isNavOpen());
+  }
 
-// menu / panels
-const btnHamburger = document.getElementById("btnHamburger");
-const topNav = document.getElementById("topNav");
-const panelAccounts = document.getElementById("panelAccounts");
-const panelUpload = document.getElementById("panelUpload");
-
-// scrim
-const elScrim = document.getElementById("scrim");
-
-// ===== Overlay helpers =====
-function setScrim(on) {
-  if (!elScrim) return;
-  elScrim.style.display = on ? "" : "none";
+  // filter listeners
+  elViewMode.onchange = () => {
+    uiState.viewMode = elViewMode.value;
+    elSingleAccountWrap.style.display = (uiState.viewMode === "single") ? "" : "none";
+    renderFiles();
+  };
+  elAccountPick.onchange = () => { uiState.accountPick = elAccountPick.value; renderFiles(); };
+  elTypeFilter.onchange = () => { uiState.typeFilter = elTypeFilter.value; renderFiles(); };
+  elLayoutMode.onchange = () => { uiState.layoutMode = elLayoutMode.value; renderFiles(); };
+  elSearch.oninput = () => { uiState.search = elSearch.value || ""; renderFiles(); };
 }
-
-function setNavOpen(on) {
-  if (!topNav) return;
-  topNav.classList.toggle("open", on);
-}
-
-function anyOverlayOpen() {
-  const accOpen = panelAccounts?.classList.contains("open");
-  const uplOpen = panelUpload && panelUpload.style.display !== "none";
-  return !!(accOpen || uplOpen);
-}
-
-function syncOverlayState() {
-  const on = anyOverlayOpen();
-  document.body.classList.toggle("lockScroll", on);
-  setScrim(on);
-}
-
-function setAccountsOpen(on) {
-  if (!panelAccounts) return;
-  if (on) setUploadOpen(false);        // <-- cierra Upload si abrís Cuentas
-  panelAccounts.classList.toggle("open", on);
-  if (on) setNavOpen(false);
-  syncOverlayState();
-}
-
-function setUploadOpen(on) {
-  if (!panelUpload) return;
-  if (on) setAccountsOpen(false);      // <-- cierra Cuentas si abrís Upload
-  panelUpload.style.display = on ? "" : "none";
-  if (on) setNavOpen(false);
-  syncOverlayState();
-}
-
-// nav buttons
-document.getElementById("btnAdd").onclick = () => addAccount().catch(errUI);
-document.getElementById("btnRefreshAll").onclick = () => refreshAll().catch(errUI);
-document.getElementById("btnUpload").onclick = () => doUpload().catch(errUI);
-
-// toggles
-document.getElementById("btnToggleAccounts").onclick = () => setAccountsOpen(true);
-document.getElementById("btnCloseAccounts").onclick = () => setAccountsOpen(false);
-document.getElementById("btnToggleUpload").onclick = () => setUploadOpen(true);
-document.getElementById("btnCloseUpload").onclick = () => setUploadOpen(false);
-
-// hamburger
-btnHamburger.onclick = () => setNavOpen(!topNav.classList.contains("open"));
-
-// click scrim: cerrar todo
-if (elScrim) {
-  elScrim.addEventListener("click", () => {
-    setNavOpen(false);
-    setAccountsOpen(false);
-    setUploadOpen(false);
-  });
-}
-
-// click fuera: cerrar solo el menú
-document.addEventListener("click", (e) => {
-  const navOpen = topNav?.classList.contains("open");
-  if (!navOpen) return;
-
-  const ham = document.getElementById("btnHamburger");
-  if (topNav.contains(e.target) || ham.contains(e.target)) return;
-
-  setNavOpen(false);
-});
-
-// filter listeners
-elViewMode.onchange = () => {
-  uiState.viewMode = elViewMode.value;
-  elSingleAccountWrap.style.display = (uiState.viewMode === "single") ? "" : "none";
-  renderFiles();
-};
-elAccountPick.onchange = () => { uiState.accountPick = elAccountPick.value; renderFiles(); };
-elTypeFilter.onchange = () => { uiState.typeFilter = elTypeFilter.value; renderFiles(); };
-elLayoutMode.onchange = () => { uiState.layoutMode = elLayoutMode.value; renderFiles(); };
-elSearch.oninput = () => { uiState.search = elSearch.value || ""; renderFiles(); };
 
 function errUI(e) {
   console.error(e);
@@ -656,7 +677,7 @@ function errUI(e) {
 }
 
 // =====================
-// 10) RENDER
+// 12) RENDER
 // =====================
 function renderAll() {
   renderStats();
@@ -683,7 +704,7 @@ function renderAccounts() {
   elAccounts.innerHTML = accounts.map(a => {
     const s = a.storage || {};
     const badge = a.needsReconnect
-      ? `<div class="badgeWarn" style="margin-top:6px;">Requiere reconectar</div>`
+      ? `<div style="margin-top:6px; padding:6px 10px; border-radius:999px; display:inline-block; border:1px solid rgba(251,191,36,.35); background: rgba(251,191,36,.12); color:#fbbf24; font-size:.85rem;">Requiere reconectar</div>`
       : ``;
 
     return `
@@ -734,7 +755,7 @@ function renderFilters() {
 }
 
 // =====================
-// 11) DATA OPS
+// 13) DATA OPS
 // =====================
 async function refreshFilesForAccount(accountId) {
   const a = accounts.find(x => x.id === accountId);
@@ -783,17 +804,16 @@ async function doUpload() {
 
   setLoading(true);
   try {
-    await uploadFileToAccount(accountId, f, folderId); // <-- acá ya lo hace público y loguea en Sheet
+    await uploadFileToAccount(accountId, f, folderId); // público + log a Sheet
     await refreshFilesForAccount(accountId);
     showToast("Subido OK (público + guardado en planilla).");
-    // opcional: setUploadOpen(false);
   } finally {
     setLoading(false);
   }
 }
 
 // =====================
-// 12) FILES MERGE + FILTER
+// 14) FILES MERGE + FILTER
 // =====================
 function mergedFiles() {
   const out = [];
@@ -834,14 +854,13 @@ function applyFilters(items) {
   }
 
   filtered = filtered.filter(x => matchType(x.f.mimeType, type));
-
   if (q) filtered = filtered.filter(x => (x.f.name || "").toLowerCase().includes(q));
 
   return filtered;
 }
 
 // =====================
-// 13) FILES RENDER
+// 15) FILES RENDER
 // =====================
 function renderFiles() {
   const itemsAll = mergedFiles();
@@ -878,6 +897,7 @@ function fileIconEmoji(mime) {
 
 function fileRow(a, f) {
   const isG = isGoogleWorkspaceDoc(f.mimeType);
+  const isFolder = f.mimeType === "application/vnd.google-apps.folder";
   const sizeStr = f.size ? fmtBytesStrInt64(f.size) : "";
   return `
     <div class="fileRow">
@@ -894,7 +914,7 @@ function fileRow(a, f) {
       </div>
 
       <div class="fileBtns">
-        <button class="btnSmall" onclick="window.dl('${a.id}','${f.id}')">${isG ? "Exportar" : "Descargar"}</button>
+        ${isFolder ? "" : `<button class="btnSmall" onclick="window.dl('${a.id}','${f.id}')">${isG ? "Exportar" : "Descargar"}</button>`}
         <button class="btnSmall" onclick="window.openDrive('${a.id}','${f.id}')">Abrir</button>
         <button class="btnSmall" onclick="window.copyId('${f.id}')">Copiar ID</button>
       </div>
@@ -926,16 +946,15 @@ function fileCard(a, f) {
   const isImg = isImageMime(f.mimeType);
   const isFolder = f.mimeType === "application/vnd.google-apps.folder";
   const isG = isGoogleWorkspaceDoc(f.mimeType);
-
   const thumbAttr = isImg ? `data-thumb="1" data-acc="${a.id}" data-file="${f.id}"` : "";
 
   return `
     <div class="card">
       <div class="cardThumb">
         ${isImg
-      ? `<img alt="${escapeHtml(f.name)}" ${thumbAttr} />`
-      : `<div style="font-size:34px;">${fileIconEmoji(f.mimeType)}</div>`
-    }
+          ? `<img alt="${escapeHtml(f.name)}" ${thumbAttr} />`
+          : `<div style="font-size:34px;">${fileIconEmoji(f.mimeType)}</div>`
+        }
       </div>
       <div class="cardBody">
         <div class="cardName" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>
@@ -985,20 +1004,24 @@ async function lazyLoadThumbs() {
     try {
       const url = await getImageThumbUrl(a, fileId);
       img.src = url;
-    } catch { }
+    } catch {}
   }
 }
 
 // =====================
-// 14) GLOBAL HANDLERS
+// 16) GLOBAL HANDLERS
 // =====================
 window.refreshOne = (id) => refreshFilesForAccount(id).catch(errUI);
 window.reconnect = (id) => reconnectAccount(id).catch(errUI);
 window.removeAcc = (id) => removeAccount(id);
 
 window.copyId = async (id) => {
-  await navigator.clipboard.writeText(id);
-  showToast("ID copiado");
+  try {
+    await navigator.clipboard.writeText(id);
+    showToast("ID copiado");
+  } catch {
+    showToast("No se pudo copiar");
+  }
 };
 
 window.dl = async (accId, fileId) => {
@@ -1019,7 +1042,7 @@ window.openDrive = (accId, fileId) => {
 };
 
 // =====================
-// 15) BOOT
+// 17) BOOT
 // =====================
 function bootWaitGIS() {
   if (!window.google?.accounts?.oauth2) {
@@ -1027,6 +1050,7 @@ function bootWaitGIS() {
     return;
   }
   initAuth();
+  bindUI();
 
   if (panelUpload) panelUpload.style.display = "none";
 
