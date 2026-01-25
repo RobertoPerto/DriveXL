@@ -97,6 +97,13 @@ function setLoading(on) {
   pill.style.display = on ? "inline-flex" : "none";
 }
 
+function setUploadProgress(on, pct = 0, text = "Subiendo…") {
+  if (!elUploadProgressWrap || !elUploadProgressBar || !elUploadProgressText) return;
+  elUploadProgressWrap.style.display = on ? "" : "none";
+  elUploadProgressBar.value = Math.max(0, Math.min(100, Number(pct) || 0));
+  elUploadProgressText.textContent = text;
+}
+
 // Toast
 function showToast(msg, ms = 3200) {
   const el = document.getElementById("toast");
@@ -247,6 +254,72 @@ async function apiFetchAccount(a, url, opts = {}, { allowInteractive = false, re
 // =====================
 // 6) DRIVE API
 // =====================
+
+async function uploadMultipartWithProgress(a, url, bodyBlob, contentType) {
+  // Asegura token (interactivo porque es acción del usuario)
+  await ensureToken(a, true);
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url, true);
+    xhr.setRequestHeader("Authorization", `Bearer ${a.access_token}`);
+    xhr.setRequestHeader("Content-Type", contentType);
+
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return;
+      const pct = (e.loaded / e.total) * 100;
+      setUploadProgress(true, pct, `Subiendo… ${pct.toFixed(0)}%`);
+    };
+
+    xhr.onload = async () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText || "{}");
+          setUploadProgress(true, 100, "Procesando…");
+          resolve(data);
+        } catch (e) {
+          reject(new Error("Respuesta inválida del upload."));
+        }
+        return;
+      }
+
+      // si dio 401/403, intentamos renovar y reintentar 1 vez
+      if (xhr.status === 401 || xhr.status === 403) {
+        try {
+          await ensureToken(a, true);
+          // retry simple
+          const xhr2 = new XMLHttpRequest();
+          xhr2.open("POST", url, true);
+          xhr2.setRequestHeader("Authorization", `Bearer ${a.access_token}`);
+          xhr2.setRequestHeader("Content-Type", contentType);
+
+          xhr2.upload.onprogress = xhr.upload.onprogress;
+
+          xhr2.onload = () => {
+            if (xhr2.status >= 200 && xhr2.status < 300) {
+              try { resolve(JSON.parse(xhr2.responseText || "{}")); }
+              catch { reject(new Error("Respuesta inválida del upload.")); }
+            } else {
+              reject(new Error(`Upload error ${xhr2.status}: ${xhr2.responseText || ""}`));
+            }
+          };
+          xhr2.onerror = () => reject(new Error("Error de red durante upload."));
+          xhr2.send(bodyBlob);
+          return;
+        } catch {
+          reject(new Error("Sesión vencida. Reconectá la cuenta."));
+          return;
+        }
+      }
+
+      reject(new Error(`Upload error ${xhr.status}: ${xhr.responseText || ""}`));
+    };
+
+    xhr.onerror = () => reject(new Error("Error de red durante upload."));
+    xhr.send(bodyBlob);
+  });
+}
+
 async function getStorageQuota(a, allowInteractive = false) {
   const url = "https://www.googleapis.com/drive/v3/about?fields=storageQuota";
   const r = await apiFetchAccount(a, url, {}, { allowInteractive });
@@ -323,6 +396,19 @@ async function makePublic(a, fileId) {
     allowFileDiscovery: false
   });
 
+  // ===== BORRAR DEFINITIVO (no va a papelera) =====
+  async function deleteFileForever(a, fileId) {
+    const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`;
+    await apiFetchAccount(a, url, { method: "DELETE" }, { allowInteractive: true });
+  }
+
+  // ===== VACIAR PAPELERA =====
+  async function emptyTrash(a) {
+    const url = "https://www.googleapis.com/drive/v3/files/trash";
+    await apiFetchAccount(a, url, { method: "DELETE" }, { allowInteractive: true });
+  }
+
+
   await apiFetchAccount(a, url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -380,13 +466,7 @@ async function uploadFileToAccount(accountId, fileObj, folderId, meta) {
   const fields = encodeURIComponent("id,name,mimeType,size,modifiedTime,webViewLink,parents");
   const url = `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=${fields}`;
 
-  const r = await apiFetchAccount(a, url, {
-    method: "POST",
-    headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
-    body: blob
-  }, { allowInteractive: true });
-
-  const created = await r.json();
+  const created = await uploadMultipartWithProgress(a, url, blob, `multipart/related; boundary=${boundary}`);
 
   // hacerlo público
   try { await makePublic(a, created.id); } catch { }
@@ -527,6 +607,9 @@ const elFiles = document.getElementById("files");
 const elUploadAccount = document.getElementById("uploadAccount");
 const elFolderId = document.getElementById("folderId");
 const elFileInput = document.getElementById("fileInput");
+const elUploadProgressWrap = document.getElementById("uploadProgressWrap");
+const elUploadProgressBar = document.getElementById("uploadProgressBar");
+const elUploadProgressText = document.getElementById("uploadProgressText");
 
 const elStatUsed = document.getElementById("statUsed");
 const elStatFree = document.getElementById("statFree");
@@ -607,6 +690,7 @@ function setUploadOpen(on) {
 document.getElementById("btnAdd").onclick = () => addAccount().catch(errUI);
 document.getElementById("btnRefreshAll").onclick = () => refreshAll().catch(errUI);
 document.getElementById("btnUpload").onclick = () => doUpload().catch(errUI);
+document.getElementById("btnEmptyTrash").onclick = () => emptyTrashAll().catch(errUI);
 
 // toggles
 document.getElementById("btnToggleAccounts").onclick = () => setAccountsOpen(true);
@@ -787,6 +871,29 @@ async function refreshAll() {
   }
 }
 
+async function emptyTrashAll() {
+  if (!accounts.length) {
+    showToast("No hay cuentas.");
+    return;
+  }
+
+  setLoading(true);
+  try {
+    for (const a of accounts) {
+      await emptyTrash(a);
+    }
+    // refresca cuotas para ver el espacio liberado
+    for (const a of accounts) {
+      a.storage = await getStorageQuota(a, true);
+      saveAccounts();
+    }
+    renderAll();
+    showToast("Papelera vaciada en todas las cuentas.");
+  } finally {
+    setLoading(false);
+  }
+}
+
 async function doUpload() {
   const accountId = elUploadAccount.value;
   const f = elFileInput.files?.[0];
@@ -807,15 +914,20 @@ async function doUpload() {
   meta.groupKey = buildGroupKey(meta);
 
   setLoading(true);
+  setUploadProgress(true, 0, "Preparando subida…");
   try {
     await uploadFileToAccount(accountId, f, folderId, meta);
+
+    setUploadProgress(true, 100, "Actualizando listado…");
     await refreshFilesForAccount(accountId);
 
     showToast("Subido OK (público + guardado en planilla).");
 
-    // opcional: limpiar campos
+    // limpiar campos
     if (elMetaEpisode) elMetaEpisode.value = "";
+    if (elMetaDisplayName) elMetaDisplayName.value = "";
   } finally {
+    setUploadProgress(false);
     setLoading(false);
   }
 }
@@ -925,6 +1037,7 @@ function fileRow(a, f) {
         <button class="btnSmall" onclick="window.dl('${a.id}','${f.id}')">${isG ? "Exportar" : "Descargar"}</button>
         <button class="btnSmall" onclick="window.openDrive('${a.id}','${f.id}')">Abrir</button>
         <button class="btnSmall" onclick="window.copyId('${f.id}')">Copiar ID</button>
+        <button class="btnSmall btnDanger" onclick="window.delForever('${a.id}','${f.id}')">Borrar</button>
       </div>
     </div>
   `;
@@ -973,6 +1086,8 @@ function fileCard(a, f) {
       <div class="cardBtns">
         ${isFolder ? `` : `<button class="btnSmall" onclick="window.dl('${a.id}','${f.id}')">${isG ? "Exportar" : "Descargar"}</button>`}
         <button class="btnSmall" onclick="window.openDrive('${a.id}','${f.id}')">Abrir</button>
+        ${isFolder ? `` : `<button class="btnSmall btnDanger" onclick="window.delForever('${a.id}','${f.id}')">Borrar</button>`}
+
       </div>
     </div>
   `;
@@ -1035,6 +1150,30 @@ window.dl = async (accId, fileId) => {
   const f = (a.filesCache || []).find(x => x.id === fileId);
   if (!f) return;
   await downloadFile(a, f);
+};
+
+window.delForever = async (accId, fileId) => {
+  const a = accounts.find(x => x.id === accId);
+  if (!a) return;
+
+  const ok = confirm("¿Borrar DEFINITIVAMENTE este archivo? (No va a la papelera)");
+  if (!ok) return;
+
+  setLoading(true);
+  try {
+    await deleteFileForever(a, fileId);
+
+    // sacarlo del cache local para que desaparezca al instante
+    if (a.filesCache) a.filesCache = a.filesCache.filter(x => x.id !== fileId);
+
+    // refrescar cuota/uso
+    a.storage = await getStorageQuota(a, true);
+    saveAccounts();
+    renderAll();
+    showToast("Borrado definitivo.");
+  } finally {
+    setLoading(false);
+  }
 };
 
 window.openDrive = (accId, fileId) => {

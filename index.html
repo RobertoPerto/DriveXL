@@ -25,6 +25,7 @@
     <nav class="nav" id="topNav">
       <button class="navbtn" id="btnAdd">Agregar cuenta</button>
       <button class="navbtn" id="btnRefreshAll">Refrescar</button>
+      <button class="navbtn" id="btnEmptyTrash">Vaciar papelera</button>
       <button class="navbtn ghost" id="btnToggleAccounts">Cuentas</button>
       <button class="navbtn ghost" id="btnToggleUpload">Subir</button>
     </nav>
@@ -169,6 +170,14 @@
         <div class="toolbar" style="padding-top:0;">
           <button class="primary" id="btnUpload">Subir</button>
         </div>
+
+        <div class="toolbar" id="uploadProgressWrap" style="display:none; padding-top:0;">
+          <div class="field" style="flex:1; min-width:220px;">
+            <span id="uploadProgressText">Subiendo…</span>
+            <progress id="uploadProgressBar" value="0" max="100" style="width:100%; height:14px;"></progress>
+          </div>
+        </div>
+
       </div>
 
       <!-- FILTERS -->
