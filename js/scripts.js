@@ -1,12 +1,15 @@
 /* =========================================================
-   Drive Gigante — scripts.js (FULL)
-   Multi-cuenta Drive + Upload + Log a Sheets + UI fixes
+   Drive Gigante — scripts.js
+   - Multi-cuenta (localStorage)
+   - Upload Drive
+   - Hacer público (anyoneWithLink reader)
+   - Loguear metadata en Sheets (Viewer)
+   - FIX overlays (scrim + lockScroll)
    ========================================================= */
 
 // =====================
 // 0) SHEETS LOG (Apps Script Web App)
 // =====================
-// Pegá acá tu WebApp:
 const SHEETS_LOG_ENDPOINT =
   "https://script.google.com/macros/s/AKfycbwmWHPB1JszHHIsh9qM25J1Hv-rBfpeK2iRijZUBv4BzVawDA48JmD82jbLvBq7FDsn5w/exec";
 
@@ -18,7 +21,6 @@ async function logUploadToSheet(payload) {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify(payload),
-      cache: "no-store",
     });
     if (!r.ok) throw new Error(await r.text().catch(() => "Sheets log failed"));
     return await r.json().catch(() => ({}));
@@ -29,7 +31,7 @@ async function logUploadToSheet(payload) {
 }
 
 // =====================
-// 1) CONFIG (Google Identity Services)
+// 1) CONFIG
 // =====================
 const CLIENT_ID = "685537038231-mfoljus3n4susmv36bvl7mnf2kuslcc1.apps.googleusercontent.com";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
@@ -52,46 +54,7 @@ let uiState = {
 };
 
 // =====================
-// 3) DOM
-// =====================
-const elAccounts = document.getElementById("accounts");
-const elFiles = document.getElementById("files");
-
-const elUploadAccount = document.getElementById("uploadAccount");
-const elFolderId = document.getElementById("folderId");
-const elFileInput = document.getElementById("fileInput");
-
-// (opcionales si luego los agregás en el HTML)
-const elCategory = document.getElementById("categoryInput");
-const elSaga = document.getElementById("sagaInput");
-const elSeries = document.getElementById("seriesInput");
-const elSeason = document.getElementById("seasonInput");
-const elEpisode = document.getElementById("episodeInput");
-const elTags = document.getElementById("tagsInput");
-
-const elStatUsed = document.getElementById("statUsed");
-const elStatFree = document.getElementById("statFree");
-const elStatTotal = document.getElementById("statTotal");
-
-// filters
-const elViewMode = document.getElementById("viewMode");
-const elAccountPick = document.getElementById("accountPick");
-const elSingleAccountWrap = document.getElementById("singleAccountWrap");
-const elTypeFilter = document.getElementById("typeFilter");
-const elSearch = document.getElementById("search");
-const elLayoutMode = document.getElementById("layoutMode");
-
-// menu / panels
-const btnHamburger = document.getElementById("btnHamburger");
-const topNav = document.getElementById("topNav");
-const panelAccounts = document.getElementById("panelAccounts");
-const panelUpload = document.getElementById("panelUpload");
-
-// scrim
-const elScrim = document.getElementById("scrim");
-
-// =====================
-// 4) HELPERS (storage, ui)
+// 3) HELPERS (storage, ui)
 // =====================
 function loadAccounts() {
   try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); }
@@ -134,6 +97,7 @@ function setLoading(on) {
   pill.style.display = on ? "inline-flex" : "none";
 }
 
+// Toast
 function showToast(msg, ms = 3200) {
   const el = document.getElementById("toast");
   if (!el) return;
@@ -148,75 +112,7 @@ function showToast(msg, ms = 3200) {
 }
 
 // =====================
-// 5) OVERLAYS (scrim + lockScroll + close collisions)
-// =====================
-function setScrim(on) {
-  if (!elScrim) return;
-  elScrim.style.display = on ? "" : "none";
-}
-
-function setNavOpen(on) {
-  if (!topNav) return;
-  topNav.classList.toggle("open", on);
-  syncOverlayState();
-}
-
-function isUploadOpen() {
-  return !!(panelUpload && panelUpload.style.display !== "none");
-}
-function isAccountsOpen() {
-  return !!(panelAccounts && panelAccounts.classList.contains("open"));
-}
-function isNavOpen() {
-  return !!(topNav && topNav.classList.contains("open"));
-}
-
-function anyOverlayOpen() {
-  // en mobile, el menú también cuenta como overlay
-  return isNavOpen() || isAccountsOpen() || isUploadOpen();
-}
-
-function syncOverlayState() {
-  const on = anyOverlayOpen();
-  document.body.classList.toggle("lockScroll", on);
-  setScrim(on);
-}
-
-function setAccountsOpen(on) {
-  if (!panelAccounts) return;
-  if (on) setUploadOpen(false);
-  panelAccounts.classList.toggle("open", on);
-  if (on) setNavOpen(false);
-  syncOverlayState();
-}
-
-function setUploadOpen(on) {
-  if (!panelUpload) return;
-  if (on) setAccountsOpen(false);      // cierra Cuentas si abrís Upload
-  panelUpload.style.display = on ? "block" : "none";  // ✅ CLAVE
-  if (on) setNavOpen(false);
-  syncOverlayState();
-}
-
-// scrim click: cerrar TODO
-if (elScrim) {
-  elScrim.addEventListener("click", () => {
-    setNavOpen(false);
-    setAccountsOpen(false);
-    setUploadOpen(false);
-  });
-}
-
-// click fuera: cerrar solo menú
-document.addEventListener("click", (e) => {
-  if (!isNavOpen()) return;
-  const ham = document.getElementById("btnHamburger");
-  if (topNav.contains(e.target) || (ham && ham.contains(e.target))) return;
-  setNavOpen(false);
-});
-
-// =====================
-// 6) AUTH (GIS)
+// 4) AUTH (GIS)
 // =====================
 function initAuth() {
   tokenClient = google.accounts.oauth2.initTokenClient({
@@ -226,13 +122,10 @@ function initAuth() {
   });
 }
 
-/**
- * requestAccessToken con timeout
- * Evita "cargando infinito" si se cierra/cuelga popup.
- */
 function requestAccessToken({ prompt, hint } = {}) {
   return new Promise((resolve, reject) => {
     let done = false;
+
     const timer = setTimeout(() => {
       if (done) return;
       done = true;
@@ -254,13 +147,8 @@ function requestAccessToken({ prompt, hint } = {}) {
   });
 }
 
-function requestTokenConsent(hintEmail) {
-  return requestAccessToken({ prompt: "consent", hint: hintEmail });
-}
-
-function requestTokenSilent(hintEmail) {
-  return requestAccessToken({ prompt: "", hint: hintEmail });
-}
+function requestTokenConsent(hintEmail) { return requestAccessToken({ prompt: "consent", hint: hintEmail }); }
+function requestTokenSilent(hintEmail) { return requestAccessToken({ prompt: "", hint: hintEmail }); }
 
 async function getUserInfo(token) {
   const r = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
@@ -270,13 +158,10 @@ async function getUserInfo(token) {
   return await r.json();
 }
 
-/**
- * ensureToken(a, allowInteractive)
- */
 async function ensureToken(a, allowInteractive = false) {
   if (!isExpired(a)) return;
 
-  // silent
+  // 1) silent
   try {
     const resp = await requestTokenSilent(a.label);
     a.access_token = resp.access_token;
@@ -286,6 +171,7 @@ async function ensureToken(a, allowInteractive = false) {
     return;
   } catch {}
 
+  // 2) popup solo si fue click usuario
   if (!allowInteractive) {
     a.needsReconnect = true;
     saveAccounts();
@@ -300,7 +186,7 @@ async function ensureToken(a, allowInteractive = false) {
 }
 
 // =====================
-// 7) API FETCH con retry
+// 5) API FETCH con retry
 // =====================
 function isAuthError(status, bodyText = "") {
   if (status === 401) return true;
@@ -359,7 +245,7 @@ async function apiFetchAccount(a, url, opts = {}, { allowInteractive = false, re
 }
 
 // =====================
-// 8) DRIVE API
+// 6) DRIVE API
 // =====================
 async function getStorageQuota(a, allowInteractive = false) {
   const url = "https://www.googleapis.com/drive/v3/about?fields=storageQuota";
@@ -391,10 +277,10 @@ async function listAllFiles(a, allowInteractive = false) {
   return files;
 }
 
+// download
 function isGoogleWorkspaceDoc(mimeType) {
   return (mimeType || "").startsWith("application/vnd.google-apps.");
 }
-
 function defaultExportMime(mimeType) {
   switch (mimeType) {
     case "application/vnd.google-apps.document": return { mime: "application/pdf", ext: "pdf" };
@@ -403,7 +289,6 @@ function defaultExportMime(mimeType) {
     default: return { mime: "application/pdf", ext: "pdf" };
   }
 }
-
 function triggerDownload(blob, filename) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -414,7 +299,6 @@ function triggerDownload(blob, filename) {
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 8000);
 }
-
 async function downloadFile(a, file) {
   if (isGoogleWorkspaceDoc(file.mimeType)) {
     const exp = defaultExportMime(file.mimeType);
@@ -430,7 +314,7 @@ async function downloadFile(a, file) {
   }
 }
 
-// hacer PUBLICO (anyoneWithLink reader)
+// ===== hacer PUBLICO (anyoneWithLink) =====
 async function makePublic(a, fileId) {
   const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/permissions`;
   const body = JSON.stringify({
@@ -446,8 +330,27 @@ async function makePublic(a, fileId) {
   }, { allowInteractive: true });
 }
 
-// upload
-async function uploadFileToAccount(accountId, fileObj, folderId) {
+// ===== helpers metadata =====
+function norm(s){ return String(s || "").trim(); }
+function buildGroupKey(meta){
+  // Si es serie: series|season  (ej: TBBT|1)
+  if (meta.series) return `${meta.series}${meta.season ? `|${meta.season}` : ""}`;
+  // Si es saga: saga  (ej: Harry Potter)
+  if (meta.saga) return meta.saga;
+  // Si no: categoría
+  if (meta.category) return meta.category;
+  return "";
+}
+function parseTags(s){
+  return norm(s)
+    .split(",")
+    .map(x => x.trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+// upload (Drive)
+async function uploadFileToAccount(accountId, fileObj, folderId, meta) {
   const a = accounts.find(x => x.id === accountId);
   if (!a) throw new Error("Cuenta no encontrada");
 
@@ -499,19 +402,8 @@ async function uploadFileToAccount(accountId, fileObj, folderId) {
 
   const publicLink = created.webViewLink || buildPublicLink(created);
 
-  // metadata opcional (si no existen inputs, manda "")
-  const category = (elCategory?.value || "").trim();
-  const saga = (elSaga?.value || "").trim();
-  const series = (elSeries?.value || "").trim();
-  const season = (elSeason?.value || "").trim();
-  const episode = (elEpisode?.value || "").trim();
-  const tags = (elTags?.value || "").trim();
-
-  // groupKey simple (podés cambiarlo después)
-  const groupKey = [category || "", (series || saga) || "", season ? `T${season}` : ""]
-    .filter(Boolean).join(" / ");
-
-  await logUploadToSheet({
+  // ===== LOG A SHEET (ACA ESTABA EL PROBLEMA: faltaba mandar meta) =====
+  const payload = {
     source: "driveXL",
     uploadedAt: new Date().toISOString(),
     accountId: a.id,
@@ -525,21 +417,23 @@ async function uploadFileToAccount(accountId, fileObj, folderId) {
     webViewLink: created.webViewLink || "",
     publicLink,
 
-    // === metadata nueva (IMPORTANTE: usa "category") ===
-    category,
-    saga,
-    series,
-    season,
-    episode,
-    tags,
-    groupKey
-  });
+    // metadata para el viewer
+    category: meta.category || "",
+    saga: meta.saga || "",
+    series: meta.series || "",
+    season: meta.season || "",
+    episode: meta.episode || "",
+    tags: meta.tags || "",
+    groupKey: meta.groupKey || ""
+  };
+
+  await logUploadToSheet(payload);
 
   return created;
 }
 
 // =====================
-// 9) THUMBNAILS (grid)
+// 7) THUMBNAILS (grid)
 // =====================
 function isImageMime(m) { return (m || "").startsWith("image/"); }
 
@@ -558,7 +452,7 @@ async function getImageThumbUrl(a, fileId) {
 }
 
 // =====================
-// 10) ACCOUNTS OPS
+// 8) ACCOUNTS OPS
 // =====================
 async function addAccount() {
   setLoading(true);
@@ -625,36 +519,126 @@ function removeAccount(accountId) {
 }
 
 // =====================
-// 11) UI BINDINGS (botones)
+// 9) UI BINDINGS
 // =====================
-function bindUI() {
-  // nav buttons
-  document.getElementById("btnAdd").onclick = () => addAccount().catch(errUI);
-  document.getElementById("btnRefreshAll").onclick = () => refreshAll().catch(errUI);
-  document.getElementById("btnUpload").onclick = () => doUpload().catch(errUI);
+const elAccounts = document.getElementById("accounts");
+const elFiles = document.getElementById("files");
+const elUploadAccount = document.getElementById("uploadAccount");
+const elFolderId = document.getElementById("folderId");
+const elFileInput = document.getElementById("fileInput");
 
-  // toggles
-  document.getElementById("btnToggleAccounts").onclick = () => setAccountsOpen(true);
-  document.getElementById("btnCloseAccounts").onclick = () => setAccountsOpen(false);
-  document.getElementById("btnToggleUpload").onclick = () => setUploadOpen(true);
-  document.getElementById("btnCloseUpload").onclick = () => setUploadOpen(false);
+const elStatUsed = document.getElementById("statUsed");
+const elStatFree = document.getElementById("statFree");
+const elStatTotal = document.getElementById("statTotal");
 
-  // hamburger
-  if (btnHamburger) {
-    btnHamburger.onclick = () => setNavOpen(!isNavOpen());
-  }
+// metadata inputs (deben existir en tu HTML)
+const elMetaCategory = document.getElementById("metaCategory");
+const elMetaSaga = document.getElementById("metaSaga");
+const elMetaSeries = document.getElementById("metaSeries");
+const elMetaSeason = document.getElementById("metaSeason");
+const elMetaEpisode = document.getElementById("metaEpisode");
+const elMetaTags = document.getElementById("metaTags");
 
-  // filter listeners
-  elViewMode.onchange = () => {
-    uiState.viewMode = elViewMode.value;
-    elSingleAccountWrap.style.display = (uiState.viewMode === "single") ? "" : "none";
-    renderFiles();
-  };
-  elAccountPick.onchange = () => { uiState.accountPick = elAccountPick.value; renderFiles(); };
-  elTypeFilter.onchange = () => { uiState.typeFilter = elTypeFilter.value; renderFiles(); };
-  elLayoutMode.onchange = () => { uiState.layoutMode = elLayoutMode.value; renderFiles(); };
-  elSearch.oninput = () => { uiState.search = elSearch.value || ""; renderFiles(); };
+// filters
+const elViewMode = document.getElementById("viewMode");
+const elAccountPick = document.getElementById("accountPick");
+const elSingleAccountWrap = document.getElementById("singleAccountWrap");
+const elTypeFilter = document.getElementById("typeFilter");
+const elSearch = document.getElementById("search");
+const elLayoutMode = document.getElementById("layoutMode");
+
+// menu / panels
+const btnHamburger = document.getElementById("btnHamburger");
+const topNav = document.getElementById("topNav");
+const panelAccounts = document.getElementById("panelAccounts");
+const panelUpload = document.getElementById("panelUpload");
+
+// scrim
+const elScrim = document.getElementById("scrim");
+
+// ===== Overlay helpers =====
+function setScrim(on) {
+  if (!elScrim) return;
+  elScrim.style.display = on ? "" : "none";
 }
+
+function setNavOpen(on) {
+  if (!topNav) return;
+  topNav.classList.toggle("open", on);
+}
+
+function anyOverlayOpen() {
+  const accOpen = panelAccounts?.classList.contains("open");
+  const uplOpen = panelUpload && panelUpload.style.display !== "none";
+  return !!(accOpen || uplOpen);
+}
+
+function syncOverlayState() {
+  const on = anyOverlayOpen();
+  document.body.classList.toggle("lockScroll", on);
+  setScrim(on);
+}
+
+function setAccountsOpen(on) {
+  if (!panelAccounts) return;
+  if (on) setUploadOpen(false);
+  panelAccounts.classList.toggle("open", on);
+  if (on) setNavOpen(false);
+  syncOverlayState();
+}
+
+function setUploadOpen(on) {
+  if (!panelUpload) return;
+  if (on) setAccountsOpen(false);
+  panelUpload.style.display = on ? "" : "none";
+  if (on) setNavOpen(false);
+  syncOverlayState();
+}
+
+// nav buttons
+document.getElementById("btnAdd").onclick = () => addAccount().catch(errUI);
+document.getElementById("btnRefreshAll").onclick = () => refreshAll().catch(errUI);
+document.getElementById("btnUpload").onclick = () => doUpload().catch(errUI);
+
+// toggles
+document.getElementById("btnToggleAccounts").onclick = () => setAccountsOpen(true);
+document.getElementById("btnCloseAccounts").onclick = () => setAccountsOpen(false);
+document.getElementById("btnToggleUpload").onclick = () => setUploadOpen(true);
+document.getElementById("btnCloseUpload").onclick = () => setUploadOpen(false);
+
+// hamburger
+btnHamburger.onclick = () => setNavOpen(!topNav.classList.contains("open"));
+
+// scrim click: cerrar todo
+if (elScrim) {
+  elScrim.addEventListener("click", () => {
+    setNavOpen(false);
+    setAccountsOpen(false);
+    setUploadOpen(false);
+  });
+}
+
+// click fuera: cerrar menú
+document.addEventListener("click", (e) => {
+  const navOpen = topNav?.classList.contains("open");
+  if (!navOpen) return;
+
+  const ham = document.getElementById("btnHamburger");
+  if (topNav.contains(e.target) || ham.contains(e.target)) return;
+
+  setNavOpen(false);
+});
+
+// filter listeners
+elViewMode.onchange = () => {
+  uiState.viewMode = elViewMode.value;
+  elSingleAccountWrap.style.display = (uiState.viewMode === "single") ? "" : "none";
+  renderFiles();
+};
+elAccountPick.onchange = () => { uiState.accountPick = elAccountPick.value; renderFiles(); };
+elTypeFilter.onchange = () => { uiState.typeFilter = elTypeFilter.value; renderFiles(); };
+elLayoutMode.onchange = () => { uiState.layoutMode = elLayoutMode.value; renderFiles(); };
+elSearch.oninput = () => { uiState.search = elSearch.value || ""; renderFiles(); };
 
 function errUI(e) {
   console.error(e);
@@ -677,7 +661,7 @@ function errUI(e) {
 }
 
 // =====================
-// 12) RENDER
+// 10) RENDER
 // =====================
 function renderAll() {
   renderStats();
@@ -704,7 +688,7 @@ function renderAccounts() {
   elAccounts.innerHTML = accounts.map(a => {
     const s = a.storage || {};
     const badge = a.needsReconnect
-      ? `<div style="margin-top:6px; padding:6px 10px; border-radius:999px; display:inline-block; border:1px solid rgba(251,191,36,.35); background: rgba(251,191,36,.12); color:#fbbf24; font-size:.85rem;">Requiere reconectar</div>`
+      ? `<div style="margin-top:6px; padding:6px 8px; border-radius:10px; background:rgba(255,200,0,.12); border:1px solid rgba(255,200,0,.25);">Requiere reconectar</div>`
       : ``;
 
     return `
@@ -755,7 +739,7 @@ function renderFilters() {
 }
 
 // =====================
-// 13) DATA OPS
+// 11) DATA OPS
 // =====================
 async function refreshFilesForAccount(accountId) {
   const a = accounts.find(x => x.id === accountId);
@@ -802,18 +786,33 @@ async function doUpload() {
 
   const folderId = elFolderId.value;
 
+  // leer metadata (si inputs no existen, queda vacío)
+  const meta = {
+    category: norm(elMetaCategory?.value),
+    saga: norm(elMetaSaga?.value),
+    series: norm(elMetaSeries?.value),
+    season: norm(elMetaSeason?.value),
+    episode: norm(elMetaEpisode?.value),
+    tags: parseTags(elMetaTags?.value),
+  };
+  meta.groupKey = buildGroupKey(meta);
+
   setLoading(true);
   try {
-    await uploadFileToAccount(accountId, f, folderId); // público + log a Sheet
+    await uploadFileToAccount(accountId, f, folderId, meta);
     await refreshFilesForAccount(accountId);
+
     showToast("Subido OK (público + guardado en planilla).");
+
+    // opcional: limpiar campos
+    if (elMetaEpisode) elMetaEpisode.value = "";
   } finally {
     setLoading(false);
   }
 }
 
 // =====================
-// 14) FILES MERGE + FILTER
+// 12) FILES MERGE + FILTER
 // =====================
 function mergedFiles() {
   const out = [];
@@ -854,13 +853,14 @@ function applyFilters(items) {
   }
 
   filtered = filtered.filter(x => matchType(x.f.mimeType, type));
+
   if (q) filtered = filtered.filter(x => (x.f.name || "").toLowerCase().includes(q));
 
   return filtered;
 }
 
 // =====================
-// 15) FILES RENDER
+// 13) FILES RENDER
 // =====================
 function renderFiles() {
   const itemsAll = mergedFiles();
@@ -897,7 +897,6 @@ function fileIconEmoji(mime) {
 
 function fileRow(a, f) {
   const isG = isGoogleWorkspaceDoc(f.mimeType);
-  const isFolder = f.mimeType === "application/vnd.google-apps.folder";
   const sizeStr = f.size ? fmtBytesStrInt64(f.size) : "";
   return `
     <div class="fileRow">
@@ -914,7 +913,7 @@ function fileRow(a, f) {
       </div>
 
       <div class="fileBtns">
-        ${isFolder ? "" : `<button class="btnSmall" onclick="window.dl('${a.id}','${f.id}')">${isG ? "Exportar" : "Descargar"}</button>`}
+        <button class="btnSmall" onclick="window.dl('${a.id}','${f.id}')">${isG ? "Exportar" : "Descargar"}</button>
         <button class="btnSmall" onclick="window.openDrive('${a.id}','${f.id}')">Abrir</button>
         <button class="btnSmall" onclick="window.copyId('${f.id}')">Copiar ID</button>
       </div>
@@ -946,6 +945,7 @@ function fileCard(a, f) {
   const isImg = isImageMime(f.mimeType);
   const isFolder = f.mimeType === "application/vnd.google-apps.folder";
   const isG = isGoogleWorkspaceDoc(f.mimeType);
+
   const thumbAttr = isImg ? `data-thumb="1" data-acc="${a.id}" data-file="${f.id}"` : "";
 
   return `
@@ -1009,19 +1009,15 @@ async function lazyLoadThumbs() {
 }
 
 // =====================
-// 16) GLOBAL HANDLERS
+// 14) GLOBAL HANDLERS
 // =====================
 window.refreshOne = (id) => refreshFilesForAccount(id).catch(errUI);
 window.reconnect = (id) => reconnectAccount(id).catch(errUI);
 window.removeAcc = (id) => removeAccount(id);
 
 window.copyId = async (id) => {
-  try {
-    await navigator.clipboard.writeText(id);
-    showToast("ID copiado");
-  } catch {
-    showToast("No se pudo copiar");
-  }
+  await navigator.clipboard.writeText(id);
+  showToast("ID copiado");
 };
 
 window.dl = async (accId, fileId) => {
@@ -1042,7 +1038,7 @@ window.openDrive = (accId, fileId) => {
 };
 
 // =====================
-// 17) BOOT
+// 15) BOOT
 // =====================
 function bootWaitGIS() {
   if (!window.google?.accounts?.oauth2) {
@@ -1050,10 +1046,7 @@ function bootWaitGIS() {
     return;
   }
   initAuth();
-  bindUI();
-
   if (panelUpload) panelUpload.style.display = "none";
-
   renderAll();
 }
 bootWaitGIS();
