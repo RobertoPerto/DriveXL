@@ -108,13 +108,16 @@ function sumTotals() {
 function setLoading(on) {
   const pill = document.getElementById("loadingPill");
   if (!pill) return;
+
+  // si estamos subiendo, preferimos mostrar la barra de progreso antes que solo el pill
+  if (on && elUploadProgressWrap && elUploadProgressWrap.style.display !== "none") {
+    pill.style.display = "none";
+    return;
+  }
+
   pill.style.display = on ? "inline-flex" : "none";
 }
 
-// si estamos subiendo, preferimos mostrar la barra de progreso antes que solo el pill
-if (on && elUploadProgressWrap && elUploadProgressWrap.style.display !== "none") {
-  pill.style.display = "none";
-}
 
 function setUploadProgress(on, pct = 0, text = "Subiendo…") {
   if (!elUploadProgressWrap || !elUploadProgressBar || !elUploadProgressText) return;
