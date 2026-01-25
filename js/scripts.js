@@ -63,7 +63,7 @@ let uiState = {
   viewMode: "all_grouped", // all_grouped | all_flat | single
   accountPick: "",
   typeFilter: "all",
-  layoutMode: "list", // list | grid
+  layoutMode: "grid", // list | grid
   search: ""
 };
 
@@ -1008,6 +1008,10 @@ function renderFiles() {
   const itemsAll = mergedFiles();
   const items = applyFilters(itemsAll);
 
+  // ✅ orden general A→Z por nombre (para flat / single)
+  items.sort((a, b) => (a.f.name || "").localeCompare((b.f.name || ""), "es", { sensitivity: "base" }));
+
+
   if (!accounts.length) {
     elFiles.innerHTML = `<div class="hint">Agregá al menos una cuenta.</div>`;
     return;
@@ -1070,6 +1074,7 @@ function renderListFlat(items) {
 
 function renderListGrouped(items) {
   const byAcc = new Map();
+
   for (const it of items) {
     if (!byAcc.has(it.a.id)) byAcc.set(it.a.id, []);
     byAcc.get(it.a.id).push(it.f);
@@ -1078,11 +1083,19 @@ function renderListGrouped(items) {
   const html = [];
   for (const [accId, files] of byAcc.entries()) {
     const a = accounts.find(x => x.id === accId);
-    html.push(`<div class="hint" style="margin:10px 0 8px;"><b>${escapeHtml(a?.label || "Cuenta")}</b> • ${files.length} items</div>`);
+
+    // ✅ ORDEN A→Z por nombre (por cuenta)
+    files.sort((x, y) => (x.name || "").localeCompare((y.name || ""), "es", { sensitivity: "base" }));
+
+    html.push(
+      `<div class="hint" style="margin:10px 0 8px;"><b>${escapeHtml(a?.label || "Cuenta")}</b> • ${files.length} items</div>`
+    );
     html.push(files.map(f => fileRow(a, f)).join(""));
   }
+
   elFiles.innerHTML = html.join("");
 }
+
 
 function fileCard(a, f) {
   const isImg = isImageMime(f.mimeType);
@@ -1125,6 +1138,7 @@ function renderGrid(items) {
     const chunks = [];
     for (const [accId, files] of byAcc.entries()) {
       const a = accounts.find(x => x.id === accId);
+      files.sort((x, y) => (x.name || "").localeCompare((y.name || ""), "es", { sensitivity: "base" })); 
       chunks.push(`<div class="hint" style="margin:10px 0 8px;"><b>${escapeHtml(a?.label || "Cuenta")}</b> • ${files.length} items</div>`);
       chunks.push(`<div class="gridWrap">${files.map(f => fileCard(a, f)).join("")}</div>`);
     }

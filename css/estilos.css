@@ -481,3 +481,13 @@ input::placeholder { color: rgba(232, 238, 252, .45); }
   .statcard:nth-child(3) { grid-column: 1 / -1; }
   .field { min-width: 150px; }
 }
+
+/* Dropdown nativo (cuando abrís opciones) */
+select {
+  color-scheme: dark; /* ayuda en Chrome/Android */
+}
+
+select, option, optgroup {
+  background-color: #111c33 !important; /* var(--surface2) */
+  color: #e8eefc !important;            /* var(--text) */
+}
