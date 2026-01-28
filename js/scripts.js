@@ -141,6 +141,17 @@ function showToast(msg, ms = 3200) {
 }
 
 // =====================
+// DEBUG: logger (DEBE IR ANTES DE AUTH hooks)
+// =====================
+window.__DBG = {
+  on: true,
+  log(...a){ if (window.__DBG.on) console.log("%c[DXL]", "color:#38bdf8;font-weight:700", ...a); },
+  warn(...a){ if (window.__DBG.on) console.warn("%c[DXL]", "color:#fbbf24;font-weight:700", ...a); },
+  err(...a){ if (window.__DBG.on) console.error("%c[DXL]", "color:#ef4444;font-weight:700", ...a); },
+};
+
+
+// =====================
 // 4) AUTH (GIS)
 // =====================
 function initAuth() {
@@ -173,6 +184,30 @@ function requestAccessToken({ prompt, hint } = {}) {
     if (prompt != null) opts.prompt = prompt;
     if (hint && hint.includes("@")) opts.hint = hint;
     tokenClient.requestAccessToken(opts);
+  });
+}
+
+// =====================
+// DEBUG: hook requestAccessToken
+// =====================
+const __orig_requestAccessToken = requestAccessToken;
+requestAccessToken = function(opts = {}) {
+  const id = Math.random().toString(36).slice(2, 7);
+  const p = ("prompt" in opts) ? String(opts.prompt) : "(unset)";
+  const h = opts.hint || "(no-hint)";
+  (window.__DBG?.log || console.log)(`#${id} requestAccessToken`, { prompt: p, hint: h });
+
+  const t0 = performance.now();
+  return __orig_requestAccessToken(opts).then((resp) => {
+    __DBG.log(`#${id} ✅ token ok in ${(performance.now()-t0).toFixed(0)}ms`, {
+      expires_in: resp?.expires_in,
+      scope: resp?.scope,
+      has_access_token: !!resp?.access_token,
+    });
+    return resp;
+  }).catch((e) => {
+    (window.__DBG?.warn || console.warn)(`#${id} ❌ token failed in ${(performance.now()-t0).toFixed(0)}ms`, e?.message || e);
+    throw e;
   });
 }
 
@@ -213,6 +248,27 @@ async function ensureToken(a, allowInteractive = false) {
   a.needsReconnect = false;
   saveAccounts();
 }
+
+// =====================
+// DEBUG: wrap ensureToken
+// =====================
+const __orig_ensureToken = ensureToken;
+ensureToken = async function(a, allowInteractive = false) {
+  const label = a?.label || a?.id || "unknown";
+  const msLeft = (a?.expires_at ? (a.expires_at - Date.now()) : 0);
+  (window.__DBG?.log || console.log)(`ensureToken(${label}) allowInteractive=${allowInteractive} msLeft=${msLeft}`);
+
+  try {
+    const r = await __orig_ensureToken(a, allowInteractive);
+    const msLeft2 = (a?.expires_at ? (a.expires_at - Date.now()) : 0);
+    __DBG.log(`ensureToken(${label}) ✅ ok msLeft=${msLeft2} needsReconnect=${!!a.needsReconnect}`);
+    return r;
+  } catch (e) {
+    (window.__DBG?.warn || console.warn)(`ensureToken(${label}) ❌`, e?.message || e);
+    throw e;
+  }
+};
+
 
 // =====================
 // 5) API FETCH con retry
@@ -1241,3 +1297,83 @@ function bootWaitGIS() {
 }
 
 bootWaitGIS();
+
+// =====================
+// DEBUG: test helpers
+// =====================
+
+// 1) Expirar el token de una cuenta YA (simulación)
+window.__expire = (emailOrIndex = 0) => {
+  const a = (typeof emailOrIndex === "number")
+    ? accounts[emailOrIndex]
+    : accounts.find(x => (x.label || "").toLowerCase().includes(String(emailOrIndex).toLowerCase()));
+
+  if (!a) return __DBG.err("Cuenta no encontrada");
+  a.expires_at = Date.now() - 1000;
+  saveAccounts();
+  __DBG.log("Token expirado (simulado):", a.label);
+};
+
+// 2) Forzar TTL corto (ej 60s) en una cuenta (solo para test)
+window.__setFakeTTL = (emailOrIndex = 0, ttlMs = 60_000) => {
+  const a = (typeof emailOrIndex === "number")
+    ? accounts[emailOrIndex]
+    : accounts.find(x => (x.label || "").toLowerCase().includes(String(emailOrIndex).toLowerCase()));
+
+  if (!a) return __DBG.err("Cuenta no encontrada");
+  if (!a.access_token) return __DBG.err("No hay access_token en esa cuenta (conectá primero)");
+
+  a.expires_at = Date.now() + ttlMs;
+  saveAccounts();
+  __DBG.log(`Fake TTL aplicado: ${a.label} -> ${(ttlMs/1000).toFixed(0)}s`);
+};
+
+// 3) Probar refresh silent (sin interacción) en una cuenta
+window.__silentRefresh = async (emailOrIndex = 0) => {
+  const a = (typeof emailOrIndex === "number")
+    ? accounts[emailOrIndex]
+    : accounts.find(x => (x.label || "").toLowerCase().includes(String(emailOrIndex).toLowerCase()));
+
+  if (!a) return __DBG.err("Cuenta no encontrada");
+
+  try {
+    await ensureToken(a, false); // 👈 NO interactivo
+    __DBG.log("silentRefresh ✅", a.label);
+  } catch (e) {
+    __DBG.warn("silentRefresh ❌", a.label, e?.message || e);
+  }
+};
+
+// 4) Probar refresh interactivo (simula click usuario)
+window.__interactiveRefresh = async (emailOrIndex = 0) => {
+  const a = (typeof emailOrIndex === "number")
+    ? accounts[emailOrIndex]
+    : accounts.find(x => (x.label || "").toLowerCase().includes(String(emailOrIndex).toLowerCase()));
+
+  if (!a) return __DBG.err("Cuenta no encontrada");
+
+  try {
+    await ensureToken(a, true); // 👈 interactivo
+    __DBG.log("interactiveRefresh ✅", a.label);
+  } catch (e) {
+    __DBG.warn("interactiveRefresh ❌", a.label, e?.message || e);
+  }
+};
+
+// 5) Stress test: cada X segundos intenta silent refresh a TODAS
+window.__startSilentLoop = (everyMs = 5000) => {
+  if (window.__silentLoop) clearInterval(window.__silentLoop);
+  window.__silentLoop = setInterval(async () => {
+    for (const a of accounts) {
+      try { await ensureToken(a, false); }
+      catch {}
+    }
+  }, everyMs);
+  __DBG.log("Silent loop ON", everyMs);
+};
+
+window.__stopSilentLoop = () => {
+  if (window.__silentLoop) clearInterval(window.__silentLoop);
+  window.__silentLoop = null;
+  __DBG.log("Silent loop OFF");
+};
